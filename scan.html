@@ -1,0 +1,341 @@
+<!doctype html>
+<!--
+  100% client-side. No fetch, no XHR, no beacon, no external scripts/fonts,
+  no form, no storage. All sound is synthesized live with the Web Audio API
+  (no audio files). Everything shown is data the browser already exposes to
+  every website via JS. Nothing leaves the visitor's screen.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#000000">
+<title>FREE_WIFI</title>
+<style>
+  :root { --bg:#000; --fg:#d6d6d6; --dim:#6b6b6b; --red:#e4141b; --green:#3dff7f; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--fg); overflow-x:hidden; }
+  body {
+    min-height:100vh; min-height:100dvh;
+    font:14px/1.6 ui-monospace, Menlo, "SF Mono", "Roboto Mono", "Courier New", monospace;
+    -webkit-font-smoothing:antialiased; -webkit-text-size-adjust:100%;
+    padding:max(22px,env(safe-area-inset-top)) 18px max(28px,env(safe-area-inset-bottom));
+  }
+  main { max-width:560px; margin:0 auto; }
+  .bar {
+    display:flex; align-items:center; gap:8px; font-size:11px; color:var(--dim);
+    border-bottom:1px solid #1c1c1c; padding-bottom:10px; margin-bottom:18px;
+  }
+  .bar .ssid { color:var(--fg); font-weight:700; letter-spacing:.02em; }
+  .bar .lock { margin-left:auto; }
+  #out { white-space:pre-wrap; word-break:break-word; }
+  .cmd { color:var(--fg); }
+  .cmd::before { content:"$ "; color:var(--red); }
+  .row b { color:var(--green); font-weight:normal; }
+  .row .v { color:#fff; }
+  .scan { color:var(--dim); }
+  .big { font-weight:700; font-size:24px; line-height:1.3; color:#fff; }
+  .red { color:var(--red); }
+  .dim { color:var(--dim); }
+  .cursor { display:inline-block; width:.55em; height:1.05em; vertical-align:-.18em; background:var(--fg); animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  #mask { display:block; width:108px; margin:34px 0 6px; opacity:0; transition:opacity 2.4s ease; }
+  #mask.on { opacity:.92; }
+
+  /* start screen */
+  #start {
+    position:fixed; inset:0; z-index:40; background:#000; color:var(--fg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px;
+    text-align:center; padding:24px;
+  }
+  #start .ss { font-weight:700; font-size:20px; letter-spacing:.04em; }
+  #start .dot { width:12px; height:12px; border-radius:50%; background:var(--green); box-shadow:0 0 14px var(--green); animation:pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:.35; transform:scale(.8);} 50%{opacity:1; transform:scale(1.15);} }
+  #start .go { border:1px solid #333; border-radius:10px; padding:14px 26px; font-size:15px; color:#fff; }
+  #start .sub { font-size:11px; color:var(--dim); }
+  #start.gone { display:none; }
+
+  /* fx overlays */
+  #flash { position:fixed; inset:0; z-index:30; background:#fff; opacity:0; pointer-events:none; }
+  #crack { position:fixed; inset:0; z-index:20; width:100%; height:100%; opacity:0; pointer-events:none; transition:opacity .08s; }
+  #crack path { fill:none; stroke:rgba(255,255,255,.5); stroke-width:1; }
+  #crack .u { stroke:rgba(0,0,0,.6); stroke-width:3; }
+  #impact { fill:rgba(255,255,255,.85); }
+  body.shake { animation:shake .5s cubic-bezier(.36,.07,.19,.97); }
+  @keyframes shake {
+    10%,90%{transform:translate(-2px,1px);} 20%,80%{transform:translate(4px,-2px);}
+    30%,50%,70%{transform:translate(-6px,2px);} 40%,60%{transform:translate(6px,-1px);}
+  }
+  #skip { position:fixed; right:14px; bottom:max(12px,env(safe-area-inset-bottom)); z-index:35; font-size:11px; color:var(--dim); }
+  #skip.gone, #mask.hide { display:none; }
+</style>
+</head>
+<body>
+<div id="flash"></div>
+<svg id="crack" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"></svg>
+
+<main>
+  <div class="bar"><span class="ssid">FREE_WIFI</span><span>· connected</span><span class="lock">🔓 open</span></div>
+  <div id="out"></div>
+  <img id="mask" src="mask.svg" alt="" aria-hidden="true">
+</main>
+
+<div id="skip" class="gone">tap to skip</div>
+
+<div id="start">
+  <div class="dot"></div>
+  <div class="ss">FREE_WIFI</div>
+  <div class="go">tap to connect</div>
+  <div class="sub">by connecting you agree to nothing. good luck.</div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var ua = navigator.userAgent || "", mt = navigator.maxTouchPoints || 0;
+  var reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- device info (browser-exposed only) ---------- */
+  function os(){
+    if(/iPhone|iPod/.test(ua)) return "iOS";
+    if(/iPad/.test(ua) || (/Macintosh/.test(ua) && mt > 1)) return "iPadOS";
+    if(/Android/.test(ua)){ var m = ua.match(/Android [0-9.]+/); return m ? m[0] : "Android"; }
+    if(/Mac OS X/.test(ua)) return "macOS";
+    if(/Windows NT 10/.test(ua)) return "Windows 10/11";
+    if(/Windows/.test(ua)) return "Windows";
+    if(/CrOS/.test(ua)) return "ChromeOS";
+    if(/Linux/.test(ua)) return "Linux";
+    return "unknown";
+  }
+  function browser(){
+    if(/CriOS/.test(ua)) return "Chrome";
+    if(/FxiOS/.test(ua)) return "Firefox";
+    if(/Edgi?A?|Edg\//.test(ua)) return "Edge";
+    if(/OPR|Opera/.test(ua)) return "Opera";
+    if(/SamsungBrowser/.test(ua)) return "Samsung Internet";
+    if(/Firefox/.test(ua)) return "Firefox";
+    if(/Chrome/.test(ua)) return "Chrome";
+    if(/Safari/.test(ua)) return "Safari";
+    return "unknown";
+  }
+  function gpu(){
+    try {
+      var c = document.createElement("canvas");
+      var gl = c.getContext("webgl") || c.getContext("experimental-webgl");
+      if(!gl) return null;
+      var e = gl.getExtension("WEBGL_debug_renderer_info");
+      var r = e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : null;
+      return r ? String(r).replace(/\s*\([^)]*\)\s*/g, " ").trim().slice(0, 42) : null;
+    } catch(_) { return null; }
+  }
+  function conn(){
+    var c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    if(!c) return null;
+    var p = [];
+    if(c.effectiveType) p.push(c.effectiveType);
+    if(c.downlink) p.push("~" + c.downlink + " Mbps");
+    return p.length ? p.join(" ") : null;
+  }
+  function tz(){ try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "unknown"; } catch(_) { return "unknown"; } }
+  function battery(){
+    return new Promise(function(res){
+      if(!navigator.getBattery) return res(null);
+      try { navigator.getBattery().then(function(b){ res(Math.round(b.level*100)+"% "+(b.charging?"(charging)":"(not charging)")); }, function(){ res(null); }); }
+      catch(_) { res(null); }
+    });
+  }
+  function gather(bat){
+    var dpr = window.devicePixelRatio || 1, rows = [];
+    function add(k,v){ if(v!==null&&v!==undefined&&v!=="") rows.push([k,String(v)]); }
+    add("device", os());
+    add("browser", browser());
+    add("screen", screen.width+"x"+screen.height+(dpr!==1?" @"+dpr+"x":""));
+    add("window", window.innerWidth+"x"+window.innerHeight);
+    add("cpu cores", navigator.hardwareConcurrency);
+    if(navigator.deviceMemory) add("memory", navigator.deviceMemory+" GB");
+    add("gpu", gpu());
+    add("battery", bat);
+    add("network", conn());
+    add("timezone", tz());
+    add("local time", new Date().toLocaleTimeString([], {hour12:false}));
+    add("language", (navigator.languages&&navigator.languages[0])||navigator.language);
+    add("dark mode", matchMedia("(prefers-color-scheme: dark)").matches?"on":"off");
+    add("touchscreen", mt>0?"yes ("+mt+" points)":"no");
+    if(typeof history.length==="number") add("pages this session", history.length);
+    if(document.referrer) add("you came from", document.referrer.replace(/^https?:\/\//,"").slice(0,34));
+    add("cookies", navigator.cookieEnabled?"enabled":"blocked");
+    return rows;
+  }
+
+  /* ---------- synth audio (no files, nothing sent) ---------- */
+  var ac = null, muted = false;
+  function AC(){ if(!ac){ try{ ac = new (window.AudioContext||window.webkitAudioContext)(); }catch(_){ muted = true; } } return ac; }
+  function beep(freq,dur,type,gain,when){
+    if(muted) return; var c=AC(); if(!c) return;
+    var t=c.currentTime+(when||0), o=c.createOscillator(), g=c.createGain();
+    o.type=type||"square"; o.frequency.value=freq;
+    g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(gain||0.05,t+0.005);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g).connect(c.destination); o.start(t); o.stop(t+dur+0.03);
+  }
+  function noise(dur,gain,hp){
+    if(muted) return; var c=AC(); if(!c) return; var t=c.currentTime;
+    var b=c.createBuffer(1,Math.max(1,c.sampleRate*dur),c.sampleRate), d=b.getChannelData(0);
+    for(var i=0;i<d.length;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,2);
+    var s=c.createBufferSource(); s.buffer=b;
+    var g=c.createGain(); g.gain.value=gain||0.1; var node=s;
+    if(hp){ var f=c.createBiquadFilter(); f.type="highpass"; f.frequency.value=hp; s.connect(f); node=f; }
+    node.connect(g).connect(c.destination); s.start(t);
+  }
+  function click(){ noise(0.02,0.06); }
+  function modem(dur){
+    if(muted) return; var c=AC(); if(!c) return; var t=c.currentTime; dur=dur||1.6;
+    for(var i=0;i<10;i++){
+      var o=c.createOscillator(), g=c.createGain(), f=200+Math.random()*1700;
+      o.type=i%2?"sawtooth":"square";
+      o.frequency.setValueAtTime(f,t+i*dur/10);
+      o.frequency.linearRampToValueAtTime(f*(0.5+Math.random()),t+(i+1)*dur/10);
+      g.gain.setValueAtTime(0.025,t+i*dur/10);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+(i+1)*dur/10);
+      o.connect(g).connect(c.destination); o.start(t+i*dur/10); o.stop(t+(i+1)*dur/10+0.02);
+    }
+  }
+  function crackSound(){
+    noise(0.3,0.32,800);
+    if(muted) return; var c=AC(); if(!c) return; var t=c.currentTime;
+    var o=c.createOscillator(), g=c.createGain();
+    o.type="sawtooth"; o.frequency.setValueAtTime(900,t); o.frequency.exponentialRampToValueAtTime(40,t+0.3);
+    g.gain.setValueAtTime(0.22,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.36);
+    o.connect(g).connect(c.destination); o.start(t); o.stop(t+0.4);
+  }
+  function drone(freq,gain){
+    if(muted) return function(){}; var c=AC(); if(!c) return function(){};
+    var o=c.createOscillator(), o2=c.createOscillator(), g=c.createGain();
+    o.type="sine"; o.frequency.value=freq||55; o2.type="sine"; o2.frequency.value=(freq||55)*1.008;
+    g.gain.value=0; g.gain.linearRampToValueAtTime(gain||0.05,c.currentTime+2);
+    o.connect(g); o2.connect(g); g.connect(c.destination); o.start(); o2.start();
+    return function(){ try{ g.gain.linearRampToValueAtTime(0,c.currentTime+1.2); setTimeout(function(){o.stop();o2.stop();},1400);}catch(_){} };
+  }
+  function vibe(p){ try{ navigator.vibrate && navigator.vibrate(p); }catch(_){} }
+
+  /* ---------- fx ---------- */
+  function flash(ms){
+    if(reduce) return; var f=document.getElementById("flash");
+    f.style.transition="none"; f.style.opacity="0.9";
+    requestAnimationFrame(function(){ f.style.transition="opacity "+(ms||220)+"ms ease"; f.style.opacity="0"; });
+  }
+  function buildCrack(){
+    var W=innerWidth, H=innerHeight, cx=W*0.5, cy=H*0.42, svg=document.getElementById("crack");
+    svg.setAttribute("viewBox","0 0 "+W+" "+H);
+    var rays=12, p="";
+    function ray(cls){
+      for(var i=0;i<rays;i++){
+        var a=(i/rays)*Math.PI*2+(Math.random()-0.5)*0.3, x=cx, y=cy, d="M"+cx.toFixed(0)+" "+cy.toFixed(0);
+        var len=Math.max(W,H)*(0.55+Math.random()*0.5), segs=4+Math.floor(Math.random()*3);
+        for(var s=0;s<segs;s++){
+          var r=len*(s+1)/segs, aa=a+(Math.random()-0.5)*0.26;
+          x=cx+Math.cos(aa)*r; y=cy+Math.sin(aa)*r;
+          d+=" L"+x.toFixed(0)+" "+y.toFixed(0);
+        }
+        p+='<path class="'+cls+'" d="'+d+'"/>';
+      }
+    }
+    ray("u"); ray("");
+    for(var ring=1;ring<=2;ring++){
+      var d="";
+      for(var i=0;i<=rays;i++){
+        var a=(i/rays)*Math.PI*2, r=ring*Math.min(W,H)*0.055*(0.8+Math.random()*0.5);
+        d+=(i?"L":"M")+(cx+Math.cos(a)*r).toFixed(0)+" "+(cy+Math.sin(a)*r).toFixed(0)+" ";
+      }
+      p+='<path d="'+d+'"/>';
+    }
+    p+='<circle id="impact" cx="'+cx.toFixed(0)+'" cy="'+cy.toFixed(0)+'" r="5"/>';
+    svg.innerHTML=p;
+  }
+  function doCrack(){
+    buildCrack();
+    crackSound(); vibe([0,90,50,130]); flash(260);
+    document.getElementById("crack").style.opacity="1";
+    if(!reduce){ document.body.classList.add("shake"); setTimeout(function(){document.body.classList.remove("shake");},550); }
+  }
+
+  /* ---------- typing engine ---------- */
+  var out=document.getElementById("out"), cursor=document.createElement("span");
+  cursor.className="cursor";
+  var skipped=reduce;
+  function wait(ms){ return new Promise(function(r){ setTimeout(r, skipped?0:ms*0.78); }); }
+  function line(cls){ var el=document.createElement("div"); if(cls) el.className=cls; out.appendChild(el); el.after(cursor); return el; }
+  function type(el,text,sound){
+    return new Promise(function(res){
+      var i=0;
+      (function step(){
+        if(skipped){ el.textContent=text; return res(); }
+        el.textContent+=text[i];
+        if(sound && i%2===0) click();
+        i++;
+        if(i>=text.length) return res();
+        setTimeout(step,13);
+      })();
+    });
+  }
+  function dataRow(k,v,pitch){
+    var el=line("row"); el.innerHTML="[<b>ok</b>] "+k+": ";
+    var span=document.createElement("span"); span.className="v"; el.appendChild(span); span.textContent=v;
+    beep(pitch,0.05,"square",0.04);
+  }
+
+  /* ---------- the show ---------- */
+  async function run(){
+    var bat=await battery(), rows=gather(bat);
+
+    var c=line("cmd"); await type(c,"./connect --target=you",true); await wait(300);
+    var s=line("scan"); modem(1.6); await type(s,"establishing uplink..."); await wait(900);
+
+    for(var i=0;i<rows.length;i++){ dataRow(rows[i][0],rows[i][1],520+i*70); await wait(210); }
+    await wait(450);
+
+    var e=line("cmd"); await type(e,"./exfil --media",true); await wait(250);
+    var prog=line("scan"); prog.textContent="pulling camera roll... 0%";
+    for(var pct=0;pct<=4;pct++){ prog.textContent="pulling camera roll... "+pct+"%"; beep(300+pct*40,0.04,"sawtooth",0.05); await wait(220); }
+    await wait(250);
+
+    doCrack(); await wait(650);
+    var ab=line("red"); await type(ab,"CONNECTION TRACED. aborting.",false); await wait(900);
+
+    var stopDrone=drone(52,0.05);
+    line(""); var b=line("big"); await type(b,"hello, friend."); await wait(850);
+    line("");
+    await type(line(""),"that could've been your whole camera roll."); await wait(650);
+    await type(line(""),"it wasn't. relax."); await wait(650);
+    await type(line("dim"),"none of this left your screen. we didn't need it to."); await wait(650);
+    await type(line(""),"this is just what your phone shows every stranger it meets."); await wait(900);
+    line("");
+    await type(line("dim"),"- fsociety"); await wait(150);
+    await type(line("dim"),"we were never here.");
+
+    out.appendChild(cursor);
+    document.getElementById("mask").classList.add("on");
+    setTimeout(stopDrone,6000);
+  }
+
+  /* ---------- start gate (unlocks audio) ---------- */
+  var startEl=document.getElementById("start"), skipEl=document.getElementById("skip"), started=false;
+  function begin(){
+    if(started) return; started=true;
+    AC(); if(ac && ac.resume) { try{ ac.resume(); }catch(_){} }
+    try{ var el=document.documentElement; (el.requestFullscreen||el.webkitRequestFullscreen||function(){}).call(el); }catch(_){}
+    beep(660,0.08,"square",0.05); beep(990,0.1,"square",0.05,0.09);
+    vibe(30);
+    startEl.classList.add("gone");
+    skipEl.classList.remove("gone");
+    run();
+  }
+  startEl.addEventListener("click", begin, {once:true});
+  startEl.addEventListener("touchstart", function(ev){ ev.preventDefault(); begin(); }, {passive:false, once:true});
+  skipEl.addEventListener("pointerdown", function(){ skipped=true; });
+  if(reduce) begin();
+})();
+</script>
+</body>
+</html>
