@@ -30,9 +30,10 @@
   .status { margin:10px 2px 18px; font-size:12px; color:var(--dim); min-height:3em; }
   .status b { color:var(--fg); font-weight:400; }
 
-  .quick { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:26px; }
-  .quick button { padding:22px 6px; border-radius:12px; border:1px solid #2a2a2a; background:#0b0b0b; font-size:13px; }
-  .quick button .k { display:block; font-size:22px; color:#fff; margin-bottom:4px; }
+  .quick { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:26px; }
+  .quick button { padding:30px 6px; border-radius:14px; border:1px solid #2a2a2a; background:#0b0b0b; font-size:15px; }
+  .quick button.wide { grid-column:1 / -1; border-color:var(--or); color:#ffd7b0; }
+  .quick button .k { display:block; font-size:28px; color:#fff; margin-bottom:6px; }
   .quick button:active { background:#151515; }
 
   section { border:1px solid var(--line); border-radius:12px; padding:12px 12px 14px; margin-bottom:12px; }
@@ -60,14 +61,18 @@
   <div class="status" id="status">add your sounds below, tap <b>start door mode</b>, then lock your phone.<br>lock screen: <b>⏮ greeting</b> · <b>⏭ line</b> · <b>⏯ thanks</b></div>
 
   <div class="quick">
+    <button class="wide" data-play="tot"><span class="k">🎃</span>trick or treat</button>
     <button data-play="greet"><span class="k">⏮</span>greeting</button>
     <button data-play="line"><span class="k">⏭</span>line</button>
     <button data-play="thanks"><span class="k">⏯</span>thanks</button>
+    <button data-play="bye"><span class="k">👋</span>goodbye</button>
   </div>
 
   <section data-group="greet"><h2><span>01 · <b>greeting</b></span><span>⏮</span></h2><ul></ul><label class="add">+ add audio<input type="file" accept="audio/*" multiple></label></section>
   <section data-group="line"><h2><span>02 · <b>lines</b></span><span>⏭</span></h2><ul></ul><label class="add">+ add audio<input type="file" accept="audio/*" multiple></label></section>
   <section data-group="thanks"><h2><span>03 · <b>thanks</b></span><span>⏯</span></h2><ul></ul><label class="add">+ add audio<input type="file" accept="audio/*" multiple></label></section>
+  <section data-group="bye"><h2><span>04 · <b>goodbye</b></span><span>👋</span></h2><ul></ul><label class="add">+ add audio<input type="file" accept="audio/*" multiple></label></section>
+  <section data-group="tot"><h2><span>05 · <b>trick or treat</b></span><span>🎃</span></h2><ul></ul><label class="add">+ add audio<input type="file" accept="audio/*" multiple></label></section>
 
   <footer><div id="offline">checking offline mode…</div>sounds are saved on this phone only. nothing is uploaded.<br>keep this tab open in your browser. turn your phone and speaker volume up.</footer>
 </main>
@@ -77,13 +82,14 @@
 <script>
 (function(){
   "use strict";
-  var GROUPS = { greet: "greeting", line: "lines", thanks: "thanks" };
+  var GROUPS = { greet: "greeting", line: "lines", thanks: "thanks", bye: "goodbye", tot: "trick or treat" };
 
   // Voice lines that ship with the page (voices/<id>.mp3). They're fetched once and saved on the
   // phone like any added sound, so they play offline. Deleting one hides it for good on that phone.
   var PRESETS = [
     { id: "greet-hello-friend", group: "greet", name: "hello, friend." },
     { id: "greet-who", group: "greet", name: "who am i? elliot alderson." },
+    { id: "greet-who-hack", group: "greet", name: "who am i? … i hack for a living." },
     { id: "greet-never-here", group: "greet", name: "you didn't see me" },
     { id: "greet-which-one", group: "greet", name: "which one you'll pick" },
     { id: "line-chocolate", group: "line", name: "yours is chocolate" },
@@ -94,7 +100,10 @@
     { id: "line-haribo", group: "line", name: "we want one thing. haribo." },
     { id: "thanks-donation", group: "thanks", name: "appreciates your donation" },
     { id: "thanks-secret", group: "thanks", name: "your secret's safe" },
-    { id: "thanks-payment", group: "thanks", name: "payment received" }
+    { id: "thanks-payment", group: "thanks", name: "payment received" },
+    { id: "bye-goodbye", group: "bye", name: "goodbye, friend. happy halloween." },
+    { id: "bye-transaction", group: "bye", name: "transaction complete. we were never here." },
+    { id: "tot-trick", group: "tot", name: "trick or treat." }
   ];
   var presetOrder = {}, presetById = {};
   PRESETS.forEach(function(p, i){ presetOrder[p.id] = i; presetById[p.id] = p; });
