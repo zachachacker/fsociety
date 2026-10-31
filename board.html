@@ -48,6 +48,8 @@
   .add { display:inline-block; padding:9px 14px; border-radius:10px; border:1px dashed #3a3a3a; color:var(--or); font-size:13px; cursor:pointer; }
   .add input { display:none; }
   footer { margin-top:18px; font-size:11px; color:var(--dim); line-height:1.6; }
+  #offline { margin-bottom:6px; }
+  #offline.ok { color:var(--green); }
 </style>
 </head>
 <body>
@@ -67,7 +69,7 @@
   <section data-group="line"><h2><span>02 · <b>lines</b></span><span>⏭</span></h2><ul></ul><label class="add">+ add audio<input type="file" accept="audio/*" multiple></label></section>
   <section data-group="thanks"><h2><span>03 · <b>thanks</b></span><span>⏯</span></h2><ul></ul><label class="add">+ add audio<input type="file" accept="audio/*" multiple></label></section>
 
-  <footer>sounds are saved on this phone only. nothing is uploaded.<br>keep this tab open in your browser. turn your phone and speaker volume up.</footer>
+  <footer><div id="offline">checking offline mode…</div>sounds are saved on this phone only. nothing is uploaded.<br>keep this tab open in your browser. turn your phone and speaker volume up.</footer>
 </main>
 
 <audio id="player" playsinline preload="auto"></audio>
@@ -237,7 +239,25 @@
     }
   };
 
-  loadAll().then(seedPresets).catch(function(){ statusEl.innerHTML = "this browser can't save sounds (private mode?). open it in a normal tab."; });
+  /* ---------- offline: the page is cached by sw.js, the sounds are already in IndexedDB ---------- */
+  var offlineEl = document.getElementById("offline");
+  function offlineCheck(){
+    var hidden = hiddenPresets();
+    var missing = PRESETS.filter(function(p){
+      return hidden.indexOf(p.id) < 0 && !sounds.some(function(s){ return s.preset === p.id; });
+    }).length;
+    var ready = "serviceWorker" in navigator ? navigator.serviceWorker.ready : Promise.reject();
+    ready.then(function(){
+      offlineEl.className = missing ? "" : "ok";
+      offlineEl.textContent = missing
+        ? "offline: " + missing + " built-in sounds still to download. open this once with signal."
+        : "✓ ready offline · " + sounds.length + " sounds saved on this phone";
+    }, function(){ offlineEl.textContent = "this browser can't work offline. keep signal on."; });
+  }
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(function(){});
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+
+  loadAll().then(seedPresets).then(offlineCheck).catch(function(){ statusEl.innerHTML = "this browser can't save sounds (private mode?). open it in a normal tab."; });
 })();
 </script>
 </body>
