@@ -76,6 +76,28 @@
 (function(){
   "use strict";
   var GROUPS = { greet: "greeting", line: "lines", thanks: "thanks" };
+
+  // Voice lines that ship with the page (voices/<id>.mp3). They're fetched once and saved on the
+  // phone like any added sound, so they play offline. Deleting one hides it for good on that phone.
+  var PRESETS = [
+    { id: "greet-hello-friend", group: "greet", name: "hello, friend." },
+    { id: "greet-never-here", group: "greet", name: "you didn't see me" },
+    { id: "greet-which-one", group: "greet", name: "which one you'll pick" },
+    { id: "line-chocolate", group: "line", name: "yours is chocolate" },
+    { id: "line-costume", group: "line", name: "this isn't a costume" },
+    { id: "line-rigged", group: "line", name: "the system is rigged" },
+    { id: "line-404", group: "line", name: "error 404" },
+    { id: "thanks-donation", group: "thanks", name: "appreciates your donation" },
+    { id: "thanks-secret", group: "thanks", name: "your secret's safe" },
+    { id: "thanks-payment", group: "thanks", name: "payment received" }
+  ];
+  var presetOrder = {};
+  PRESETS.forEach(function(p, i){ presetOrder[p.id] = i; });
+  function rank(s){ return s.preset in presetOrder ? presetOrder[s.preset] : 1e6 + s.id; }
+  function hiddenPresets(){ try { return JSON.parse(localStorage.getItem("fsoc-hidden-presets") || "[]"); } catch (e) { return []; } }
+  function hidePreset(id){
+    try { var h = hiddenPresets(); if (h.indexOf(id) < 0) h.push(id); localStorage.setItem("fsoc-hidden-presets", JSON.stringify(h)); } catch (e) {}
+  }
   var player = document.getElementById("player");
   var statusEl = document.getElementById("status");
   var sounds = [];            // {id, group, name, blob}
@@ -103,20 +125,35 @@
       return tx("readwrite", function(s){ return s.add({ group: group, name: f.name.replace(/\.[^.]+$/, ""), blob: f, added: Date.now() }); });
     })).then(loadAll);
   }
-  function remove(id){ return tx("readwrite", function(s){ return s.delete(id); }).then(loadAll); }
+  function remove(snd){
+    if (snd.preset) hidePreset(snd.preset);
+    return tx("readwrite", function(s){ return s.delete(snd.id); }).then(loadAll);
+  }
+  function seedPresets(){
+    var have = {}, hidden = hiddenPresets();
+    sounds.forEach(function(s){ if (s.preset) have[s.preset] = true; });
+    var todo = PRESETS.filter(function(p){ return !have[p.id] && hidden.indexOf(p.id) < 0; });
+    if (!todo.length) return;
+    return Promise.all(todo.map(function(p){
+      return fetch("voices/" + p.id + ".mp3")
+        .then(function(r){ if (!r.ok) throw new Error(r.status); return r.blob(); })
+        .then(function(b){ return tx("readwrite", function(s){ return s.add({ group: p.group, name: p.name, blob: b, preset: p.id, added: Date.now() }); }); })
+        .catch(function(){}); // offline on first open: they'll load next time
+    })).then(loadAll);
+  }
 
   /* ---------- ui ---------- */
   function render(){
     Object.keys(GROUPS).forEach(function(g){
       var ul = document.querySelector('section[data-group="' + g + '"] ul');
-      var items = sounds.filter(function(s){ return s.group === g; });
+      var items = sounds.filter(function(s){ return s.group === g; }).sort(function(a, b){ return rank(a) - rank(b); });
       ul.innerHTML = items.length ? "" : '<li class="empty">no sounds yet</li>';
       items.forEach(function(s){
         var li = document.createElement("li"); li.dataset.id = s.id;
         li.innerHTML = '<span class="nm"></span><button class="pl">▶</button><button class="del">✕</button>';
         li.querySelector(".nm").textContent = s.name;
         li.querySelector(".pl").onclick = function(){ playSound(s); };
-        li.querySelector(".del").onclick = function(){ if (confirm('delete "' + s.name + '"?')) remove(s.id); };
+        li.querySelector(".del").onclick = function(){ if (confirm('delete "' + s.name + '"?')) remove(s); };
         ul.appendChild(li);
       });
     });
@@ -195,7 +232,7 @@
     }
   };
 
-  loadAll().catch(function(){ statusEl.innerHTML = "this browser can't save sounds (private mode?). open it in a normal tab."; });
+  loadAll().then(seedPresets).catch(function(){ statusEl.innerHTML = "this browser can't save sounds (private mode?). open it in a normal tab."; });
 })();
 </script>
 </body>
