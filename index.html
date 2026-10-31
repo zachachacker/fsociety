@@ -57,10 +57,20 @@
                width 1.25s cubic-bezier(.65,0,.2,1), height 1.25s cubic-bezier(.65,0,.2,1),
                opacity 1.25s ease, filter 1.25s ease; }
   #maskFly.full { opacity:1; filter:drop-shadow(0 0 28px rgba(255,255,255,.18)); }
-  #flyText { position:fixed; left:0; right:0; z-index:30; text-align:center; color:#fff;
-    font-weight:700; letter-spacing:-.01em; line-height:1.15; text-shadow:0 0 18px rgba(255,255,255,.25);
+  #flyText { position:fixed; left:0; right:0; z-index:30; text-align:center; line-height:0;
     opacity:0; transform:translateY(12px); transition:opacity .9s ease 1.05s, transform .9s ease 1.05s; }
+  #flyText svg { display:inline-block; }
   #flyText.on { opacity:1; transform:none; }
+  .hw { font-weight:700; font-size:23px; line-height:1.3; color:#ff8a1f; text-shadow:0 0 14px rgba(255,138,31,.55); }
+
+  /* after the logo lands: who made this, and a way to the portfolio */
+  #flyLink { position:fixed; left:0; right:0; z-index:31; text-align:center; padding:0 20px;
+    font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    opacity:0; transform:translateY(10px); transition:opacity .8s ease 2.4s, transform .8s ease 2.4s; }
+  #flyLink.on { opacity:1; transform:none; }
+  #flyLink .note { color:#b9b9b9; font-size:14px; margin-bottom:12px; }
+  #flyLink a { display:inline-block; padding:11px 20px; border-radius:999px; border:1px solid #ff8a1f; color:#ffd7b0;
+    background:rgba(255,138,31,.1); font-size:15px; font-weight:600; text-decoration:none; box-shadow:0 0 18px rgba(255,138,31,.25); }
   @media (prefers-reduced-motion: reduce) { #maskFly, #flyText { transition:none; } }
 
   /* start screen */
@@ -220,14 +230,15 @@
   function wait(ms){ return new Promise(function(r){ setTimeout(r, skipped?0:ms*0.78); }); }
   function line(cls){ var el=document.createElement("div"); if(cls) el.className=cls; out.appendChild(el); el.after(cursor); return el; }
   function type(el,text,sound){
+    var chars=Array.from(text); // whole code points, so emoji never type out half-drawn
     return new Promise(function(res){
       var i=0;
       (function step(){
         if(skipped){ el.textContent=text; return res(); }
-        el.textContent+=text[i];
+        el.textContent+=chars[i];
         if(sound && i%2===0) click();
         i++;
-        if(i>=text.length) return res();
+        if(i>=chars.length) return res();
         setTimeout(step,13);
       })();
     });
@@ -263,12 +274,52 @@
     await type(line(""),"this is just what your phone shows every stranger it meets."); await wait(900);
     line("");
     await type(line("dim"),"- fsociety"); await wait(150);
-    await type(line("dim"),"we were never here.");
+    await type(line("dim"),"we were never here."); await wait(800);
+    line(""); await type(line("hw"),"happy halloween 🎃");
 
     out.appendChild(cursor);
     document.getElementById("mask").classList.add("on");
     setTimeout(stopDrone,6000);
     setTimeout(flyMask,2500); // 1s fade-in, ~1.5s hold, then the takeover
+  }
+
+  var PORTFOLIO="https://zachachacker.github.io/";
+
+  // The fsociety wordmark is a pixel font, so it's drawn from a bitmap traced off the official
+  // art ('#' = ink), one rect per horizontal run, which stays crisp at any size with no font download.
+  var WM=[
+    ".....................................................................####.................................................",
+    ".....................................................................####.................................................",
+    "...########..........................................................####........................####.....................",
+    "...########..........................................................####........................####.....................",
+    ".##########......................................................................................####.....................",
+    ".####............................................................................................####.....................",
+    ".####............###..#####......####.####.......####.###........########.........###..##.......##########......###...####",
+    ".####............###..#####......####.####.......####.###........########........####..##.......##########......###...####",
+    ".####...........####..#####.....#####.#####.....####...####..........####.......####...####......####...........###...####",
+    ".####...........####............####...####.....####...####..........####.......####...####......####...........###...####",
+    "###########.....####............####...####.....####.................####.......####...####......####...........###...####",
+    "###########.....####............####...####.....####.................####.......####..#####......####...........###...####",
+    "###########......########.......####...####.....####.................####.......####.######......####...........###...####",
+    ".####............########.......####...####.....####.................####.......####.######......####...........###...####",
+    ".####.............#########.....####...####.....####.................####.......####.............####...........###...####",
+    ".####..................####.....####...####.....####.................####.......####.............####...........###...####",
+    ".####..................####.....####...####.....####...####..........####.......####.............####...........###...####",
+    ".####..................####.....####...####.....####..#####......###########....#########........#########......###..#####",
+    ".####...........####..###........###..###........###..###........###########......#######..........########.....###.####..",
+    ".####...........####..###........###..###........###..###........###########......#######..........#######.......##.####..",
+    "....................................................................................................................####..",
+    "................................................................................................................########..",
+    "................................................................................................................#######...",
+    "................................................................................................................#######..."
+  ];
+  function wordmark(){
+    var cols=WM[0].length, rows=WM.length, runs="";
+    WM.forEach(function(row,y){ row.replace(/#+/g,function(run,x){ runs+='<rect x="'+x+'" y="'+y+'" width="'+run.length+'" height="1"/>'; }); });
+    var el=document.createElement("div");
+    el.innerHTML='<svg viewBox="0 0 '+cols+' '+rows+'" shape-rendering="crispEdges" fill="#fff" role="img" aria-label="fsociety">'+runs+'</svg>';
+    var svg=el.firstChild;
+    return { el:el, ratio:rows/cols, size:function(w,h,top){ el.style.top=top+"px"; svg.style.width=w+"px"; svg.style.height=h+"px"; } };
   }
 
   /* ---------- mask takeover: lift it from its spot in the terminal to fill the screen ---------- */
@@ -280,18 +331,23 @@
     var c=m.cloneNode(true); c.id="maskFly"; c.className="";
     c.style.left=r.left+"px"; c.style.top=r.top+"px"; c.style.width=r.width+"px"; c.style.height=r.height+"px";
     document.body.appendChild(c); m.style.visibility="hidden";
-    var t=document.createElement("div"); t.id="flyText"; t.textContent="fsociety";
-    document.body.appendChild(t);
+    var wm=wordmark(); wm.el.id="flyText"; document.body.appendChild(wm.el);
+    var L=document.createElement("div"); L.id="flyLink";
+    L.innerHTML='<div class="note">I made this website for Halloween 🎃</div>'
+      +'<a href="'+PORTFOLIO+'" target="_blank" rel="noopener">See what else I’ve built →</a>';
+    document.body.appendChild(L);
     function place(){
-      // Mask and wordmark are sized to fit together and centred as one group.
-      var w=Math.min(innerWidth*0.82,(innerHeight*0.74)/ratio), h=w*ratio;
-      var fs=w*0.17, gap=w*0.07, top=(innerHeight-(h+gap+fs*1.15))/2;
+      // Mask, wordmark and link are sized to fit the screen together and centred as one group.
+      var w=Math.min(innerWidth*0.8,(innerHeight*0.56)/ratio), h=w*ratio;
+      var ww=Math.min(w*1.05,innerWidth*0.88), wh=ww*wm.ratio, gap=w*0.06, gap2=Math.max(22,w*0.09), lh=L.offsetHeight;
+      var top=Math.max(12,(innerHeight-(h+gap+wh+gap2+lh))/2);
       c.style.left=(innerWidth-w)/2+"px"; c.style.top=top+"px";
       c.style.width=w+"px"; c.style.height=h+"px";
-      t.style.top=(top+h+gap)+"px"; t.style.fontSize=fs+"px";
+      wm.size(ww,wh,top+h+gap);
+      L.style.top=(top+h+gap+wh+gap2)+"px";
     }
     void c.offsetWidth; // commit the start state so the changes below animate
-    document.body.classList.add("takeover"); c.classList.add("full"); t.classList.add("on"); place();
+    document.body.classList.add("takeover"); c.classList.add("full"); wm.el.classList.add("on"); L.classList.add("on"); place();
     addEventListener("resize", function(){ c.style.transition="none"; place(); });
   }
 
