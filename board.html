@@ -1,0 +1,202 @@
+<!doctype html>
+<!--
+  fsociety // door mode - a pocket soundboard.
+  Sounds are picked from the phone and stored only on the phone (IndexedDB). Nothing is uploaded.
+  Lock-screen controls (Media Session): previous = greeting, next = line, play/pause = thanks.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#000000">
+<title>door mode</title>
+<style>
+  :root { --bg:#000; --fg:#d6d6d6; --dim:#6b6b6b; --red:#e4141b; --green:#3dff7f; --or:#ff8a1f; --line:#1c1c1c; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; background:var(--bg); color:var(--fg); }
+  body { font:14px/1.5 ui-monospace, Menlo, "SF Mono", "Roboto Mono", monospace; -webkit-font-smoothing:antialiased;
+    padding:max(18px,env(safe-area-inset-top)) 16px max(28px,env(safe-area-inset-bottom)); }
+  main { max-width:520px; margin:0 auto; }
+  header { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--dim); border-bottom:1px solid var(--line); padding-bottom:10px; margin-bottom:18px; }
+  header b { color:#fff; letter-spacing:.02em; }
+  header .live { width:7px; height:7px; border-radius:50%; background:var(--dim); }
+  body.armed header .live { background:var(--red); box-shadow:0 0 8px var(--red); animation:pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:.35;} 50%{opacity:1;} }
+  button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
+
+  .arm { display:block; width:100%; padding:18px; border-radius:12px; border:1px solid #333; color:#fff; font-size:16px; font-weight:700; letter-spacing:.04em; }
+  body.armed .arm { border-color:var(--red); color:#ffb3b8; box-shadow:0 0 22px rgba(228,20,27,.25); }
+  .status { margin:10px 2px 18px; font-size:12px; color:var(--dim); min-height:3em; }
+  .status b { color:var(--fg); font-weight:400; }
+
+  .quick { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:26px; }
+  .quick button { padding:22px 6px; border-radius:12px; border:1px solid #2a2a2a; background:#0b0b0b; font-size:13px; }
+  .quick button .k { display:block; font-size:22px; color:#fff; margin-bottom:4px; }
+  .quick button:active { background:#151515; }
+
+  section { border:1px solid var(--line); border-radius:12px; padding:12px 12px 14px; margin-bottom:12px; }
+  h2 { margin:0 0 8px; font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--dim); font-weight:400; display:flex; justify-content:space-between; }
+  h2 b { color:var(--fg); font-weight:700; }
+  ul { list-style:none; margin:0 0 10px; padding:0; }
+  li { display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid #111; }
+  li .nm { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  li button { padding:6px 10px; border-radius:8px; border:1px solid #2a2a2a; font-size:12px; }
+  li button.del { color:var(--dim); }
+  li.playing .nm { color:var(--green); }
+  .empty { color:var(--dim); font-size:12px; padding:4px 0 10px; }
+  .add { display:inline-block; padding:9px 14px; border-radius:10px; border:1px dashed #3a3a3a; color:var(--or); font-size:13px; cursor:pointer; }
+  .add input { display:none; }
+  footer { margin-top:18px; font-size:11px; color:var(--dim); line-height:1.6; }
+</style>
+</head>
+<body>
+<main>
+  <header><span class="live"></span><b>fsociety</b><span>// door mode</span></header>
+
+  <button class="arm" id="arm">start door mode</button>
+  <div class="status" id="status">add your sounds below, tap <b>start door mode</b>, then lock your phone.<br>lock screen: <b>⏮ greeting</b> · <b>⏭ line</b> · <b>⏯ thanks</b></div>
+
+  <div class="quick">
+    <button data-play="greet"><span class="k">⏮</span>greeting</button>
+    <button data-play="line"><span class="k">⏭</span>line</button>
+    <button data-play="thanks"><span class="k">⏯</span>thanks</button>
+  </div>
+
+  <section data-group="greet"><h2><span>01 · <b>greeting</b></span><span>⏮</span></h2><ul></ul><label class="add">+ add audio<input type="file" accept="audio/*" multiple></label></section>
+  <section data-group="line"><h2><span>02 · <b>lines</b></span><span>⏭</span></h2><ul></ul><label class="add">+ add audio<input type="file" accept="audio/*" multiple></label></section>
+  <section data-group="thanks"><h2><span>03 · <b>thanks</b></span><span>⏯</span></h2><ul></ul><label class="add">+ add audio<input type="file" accept="audio/*" multiple></label></section>
+
+  <footer>sounds are saved on this phone only. nothing is uploaded.<br>keep this tab open in your browser. turn your phone and speaker volume up.</footer>
+</main>
+
+<audio id="player" playsinline preload="auto"></audio>
+
+<script>
+(function(){
+  "use strict";
+  var GROUPS = { greet: "greeting", line: "lines", thanks: "thanks" };
+  var player = document.getElementById("player");
+  var statusEl = document.getElementById("status");
+  var sounds = [];            // {id, group, name, blob}
+  var lastId = {};            // per group, so the same sound doesn't play twice in a row
+  var armed = false, srcUrl = null, silentUrl = null;
+
+  /* ---------- storage: IndexedDB on this device ---------- */
+  var dbp = new Promise(function(res, rej){
+    var rq = indexedDB.open("fsociety-board", 1);
+    rq.onupgradeneeded = function(){ rq.result.createObjectStore("sounds", { keyPath: "id", autoIncrement: true }); };
+    rq.onsuccess = function(){ res(rq.result); };
+    rq.onerror = function(){ rej(rq.error); };
+  });
+  function tx(mode, fn){
+    return dbp.then(function(db){ return new Promise(function(res, rej){
+      var t = db.transaction("sounds", mode), out = fn(t.objectStore("sounds"));
+      t.oncomplete = function(){ res(out && out.result); };
+      t.onerror = function(){ rej(t.error); };
+    }); });
+  }
+  function loadAll(){ return tx("readonly", function(s){ return s.getAll(); }).then(function(all){ sounds = all || []; render(); }); }
+  function addFiles(group, files){
+    var list = Array.prototype.slice.call(files);
+    return Promise.all(list.map(function(f){
+      return tx("readwrite", function(s){ return s.add({ group: group, name: f.name.replace(/\.[^.]+$/, ""), blob: f, added: Date.now() }); });
+    })).then(loadAll);
+  }
+  function remove(id){ return tx("readwrite", function(s){ return s.delete(id); }).then(loadAll); }
+
+  /* ---------- ui ---------- */
+  function render(){
+    Object.keys(GROUPS).forEach(function(g){
+      var ul = document.querySelector('section[data-group="' + g + '"] ul');
+      var items = sounds.filter(function(s){ return s.group === g; });
+      ul.innerHTML = items.length ? "" : '<li class="empty">no sounds yet</li>';
+      items.forEach(function(s){
+        var li = document.createElement("li"); li.dataset.id = s.id;
+        li.innerHTML = '<span class="nm"></span><button class="pl">▶</button><button class="del">✕</button>';
+        li.querySelector(".nm").textContent = s.name;
+        li.querySelector(".pl").onclick = function(){ playSound(s); };
+        li.querySelector(".del").onclick = function(){ if (confirm('delete "' + s.name + '"?')) remove(s.id); };
+        ul.appendChild(li);
+      });
+    });
+  }
+  function mark(id){
+    document.querySelectorAll("li.playing").forEach(function(li){ li.classList.remove("playing"); });
+    if (id != null) { var li = document.querySelector('li[data-id="' + id + '"]'); if (li) li.classList.add("playing"); }
+  }
+  document.querySelectorAll("section[data-group]").forEach(function(sec){
+    var input = sec.querySelector("input[type=file]");
+    input.onchange = function(){ if (input.files.length) addFiles(sec.dataset.group, input.files).then(function(){ input.value = ""; }); };
+  });
+  document.querySelectorAll("[data-play]").forEach(function(b){ b.onclick = function(){ playGroup(b.dataset.play); }; });
+
+  /* ---------- playback ---------- */
+  // A looping silent track keeps the media session alive while the phone is locked, so the
+  // lock-screen buttons keep working between lines. Everything plays through one element.
+  function silentWav(){
+    var sr = 8000, n = sr, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    function w(o, s){ for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); }
+    w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt "); v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true);
+    v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
+    return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+  }
+  function setMeta(title){
+    if (!("mediaSession" in navigator)) return;
+    try { navigator.mediaSession.metadata = new MediaMetadata({ title: title, artist: "fsociety", album: "door mode" }); } catch (e) {}
+  }
+  function idle(){
+    mark(null);
+    if (!armed) return;
+    player.loop = true; player.src = silentUrl; player.play().catch(function(){});
+    setMeta("armed");
+  }
+  function playSound(s){
+    if (srcUrl) URL.revokeObjectURL(srcUrl);
+    srcUrl = URL.createObjectURL(s.blob);
+    lastId[s.group] = s.id;
+    player.loop = false; player.src = srcUrl;
+    player.play().catch(function(){ statusEl.innerHTML = "couldn't play that file. try an mp3 or m4a."; });
+    setMeta(s.name); mark(s.id);
+  }
+  function playGroup(g){
+    var pool = sounds.filter(function(s){ return s.group === g; });
+    if (!pool.length) { statusEl.innerHTML = "no " + GROUPS[g] + " sounds yet. add some below."; return; }
+    var choices = pool.length > 1 ? pool.filter(function(s){ return s.id !== lastId[g]; }) : pool;
+    playSound(choices[Math.floor(Math.random() * choices.length)]);
+  }
+  player.addEventListener("ended", idle);
+
+  /* ---------- door mode: lock-screen controls ---------- */
+  var ms = "mediaSession" in navigator ? navigator.mediaSession : null;
+  function handlers(on){
+    if (!ms) return;
+    var map = { previoustrack: "greet", nexttrack: "line", play: "thanks", pause: "thanks" };
+    Object.keys(map).forEach(function(a){ try { ms.setActionHandler(a, on ? function(){ playGroup(map[a]); } : null); } catch (e) {} });
+    // no seek buttons, so the lock screen shows previous/next instead of +-10s
+    ["seekbackward", "seekforward", "seekto"].forEach(function(a){ try { ms.setActionHandler(a, null); } catch (e) {} });
+    try { ms.playbackState = on ? "playing" : "none"; } catch (e) {}
+  }
+  var armBtn = document.getElementById("arm");
+  armBtn.onclick = function(){
+    armed = !armed;
+    document.body.classList.toggle("armed", armed);
+    armBtn.textContent = armed ? "stop door mode" : "start door mode";
+    if (armed) {
+      if (!silentUrl) silentUrl = silentWav();
+      handlers(true); idle();
+      statusEl.innerHTML = ms
+        ? "<b>armed.</b> lock your phone and put it away.<br>lock screen: <b>⏮ greeting</b> · <b>⏭ line</b> · <b>⏯ thanks</b>"
+        : "<b>armed</b>, but this browser has no lock-screen controls. use the buttons below.";
+    } else {
+      handlers(false); player.pause(); player.removeAttribute("src"); player.load(); mark(null);
+      statusEl.innerHTML = "stopped. tap <b>start door mode</b> to arm again.";
+    }
+  };
+
+  loadAll().catch(function(){ statusEl.innerHTML = "this browser can't save sounds (private mode?). open it in a normal tab."; });
+})();
+</script>
+</body>
+</html>
