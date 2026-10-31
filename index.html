@@ -46,8 +46,18 @@
   .dim { color:var(--dim); }
   .cursor { display:inline-block; width:.55em; height:1.05em; vertical-align:-.18em; background:var(--fg); animation:blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity:0; } }
-  #mask { flex:0 0 auto; display:block; width:92px; margin:18px 0 2px; opacity:0; transition:opacity 2.2s ease; }
+  #mask { flex:0 0 auto; display:block; width:92px; margin:18px 0 2px; opacity:0; transition:opacity 1s ease; }
   #mask.on { opacity:.92; }
+
+  /* end beat: the mask lifts out of the terminal and takes over the screen */
+  main { transition:opacity .9s ease; }
+  body.takeover main { opacity:0; }
+  #maskFly { position:fixed; z-index:30; margin:0; opacity:.92;
+    transition:left 1.25s cubic-bezier(.65,0,.2,1), top 1.25s cubic-bezier(.65,0,.2,1),
+               width 1.25s cubic-bezier(.65,0,.2,1), height 1.25s cubic-bezier(.65,0,.2,1),
+               opacity 1.25s ease, filter 1.25s ease; }
+  #maskFly.full { opacity:1; filter:drop-shadow(0 0 28px rgba(255,255,255,.18)); }
+  @media (prefers-reduced-motion: reduce) { #maskFly { transition:none; } }
 
   /* start screen */
   #start {
@@ -62,8 +72,6 @@
   #start .sub { font-size:11px; color:var(--dim); }
   #start.gone { display:none; }
 
-  #skip { position:fixed; right:14px; bottom:max(10px,env(safe-area-inset-bottom)); z-index:35; font-size:11px; color:var(--dim); }
-  #skip.gone { display:none; }
 </style>
 </head>
 <body>
@@ -75,7 +83,6 @@
   </div>
 </main>
 
-<div id="skip" class="gone">tap to skip</div>
 
 <div id="start">
   <div class="dot"></div>
@@ -257,10 +264,30 @@
     out.appendChild(cursor);
     document.getElementById("mask").classList.add("on");
     setTimeout(stopDrone,6000);
+    setTimeout(flyMask,2500); // 1s fade-in, ~1.5s hold, then the takeover
+  }
+
+  /* ---------- mask takeover: lift it from its spot in the terminal to fill the screen ---------- */
+  function flyMask(){
+    var m=document.getElementById("mask"), r=m.getBoundingClientRect();
+    if(!r.width) return;
+    var ratio=r.height/r.width;
+    // A fixed-position copy starts exactly over the original, so the move reads as one object.
+    var c=m.cloneNode(true); c.id="maskFly"; c.className="";
+    c.style.left=r.left+"px"; c.style.top=r.top+"px"; c.style.width=r.width+"px"; c.style.height=r.height+"px";
+    document.body.appendChild(c); m.style.visibility="hidden";
+    function place(){
+      var w=Math.min(innerWidth*0.86,(innerHeight*0.8)/ratio), h=w*ratio;
+      c.style.left=(innerWidth-w)/2+"px"; c.style.top=(innerHeight-h)/2+"px";
+      c.style.width=w+"px"; c.style.height=h+"px";
+    }
+    void c.offsetWidth; // commit the start position so the change below animates
+    document.body.classList.add("takeover"); c.classList.add("full"); place();
+    addEventListener("resize", function(){ c.style.transition="none"; place(); });
   }
 
   /* ---------- start gate (unlocks audio where the device allows it) ---------- */
-  var startEl=document.getElementById("start"), skipEl=document.getElementById("skip"), started=false;
+  var startEl=document.getElementById("start"), started=false;
   function begin(){
     if(started) return; started=true;
     AC(); if(ac && ac.resume) { try{ ac.resume(); }catch(_){} }
@@ -268,12 +295,10 @@
     beep(660,0.08,"square",0.05); beep(990,0.1,"square",0.05,0.09);
     vibe(30);
     startEl.classList.add("gone");
-    skipEl.classList.remove("gone");
     run();
   }
   startEl.addEventListener("click", begin, {once:true});
   startEl.addEventListener("touchstart", function(ev){ ev.preventDefault(); begin(); }, {passive:false, once:true});
-  skipEl.addEventListener("pointerdown", function(){ skipped=true; });
   if(reduce) begin();
 })();
 </script>
