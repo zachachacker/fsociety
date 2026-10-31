@@ -81,7 +81,7 @@
   // phone like any added sound, so they play offline. Deleting one hides it for good on that phone.
   var PRESETS = [
     { id: "greet-hello-friend", group: "greet", name: "hello, friend." },
-    { id: "greet-who", group: "greet", name: "who a… alderson" },
+    { id: "greet-who", group: "greet", name: "who am i? elliot alderson." },
     { id: "greet-never-here", group: "greet", name: "you didn't see me" },
     { id: "greet-which-one", group: "greet", name: "which one you'll pick" },
     { id: "line-chocolate", group: "line", name: "yours is chocolate" },
@@ -94,9 +94,11 @@
     { id: "thanks-secret", group: "thanks", name: "your secret's safe" },
     { id: "thanks-payment", group: "thanks", name: "payment received" }
   ];
-  var presetOrder = {};
-  PRESETS.forEach(function(p, i){ presetOrder[p.id] = i; });
+  var presetOrder = {}, presetById = {};
+  PRESETS.forEach(function(p, i){ presetOrder[p.id] = i; presetById[p.id] = p; });
   function rank(s){ return s.preset in presetOrder ? presetOrder[s.preset] : 1e6 + s.id; }
+  // Built-in sounds take their label from PRESETS, so renaming one here updates phones that already have it.
+  function label(s){ return s.preset && presetById[s.preset] ? presetById[s.preset].name : s.name; }
   function hiddenPresets(){ try { return JSON.parse(localStorage.getItem("fsoc-hidden-presets") || "[]"); } catch (e) { return []; } }
   function hidePreset(id){
     try { var h = hiddenPresets(); if (h.indexOf(id) < 0) h.push(id); localStorage.setItem("fsoc-hidden-presets", JSON.stringify(h)); } catch (e) {}
@@ -154,9 +156,9 @@
       items.forEach(function(s){
         var li = document.createElement("li"); li.dataset.id = s.id;
         li.innerHTML = '<span class="nm"></span><button class="pl">▶</button><button class="del">✕</button>';
-        li.querySelector(".nm").textContent = s.name;
+        li.querySelector(".nm").textContent = label(s);
         li.querySelector(".pl").onclick = function(){ playSound(s); };
-        li.querySelector(".del").onclick = function(){ if (confirm('delete "' + s.name + '"?')) remove(s); };
+        li.querySelector(".del").onclick = function(){ if (confirm('delete "' + label(s) + '"?')) remove(s); };
         ul.appendChild(li);
       });
     });
@@ -198,7 +200,7 @@
     lastId[s.group] = s.id;
     player.loop = false; player.src = srcUrl;
     player.play().catch(function(){ statusEl.innerHTML = "couldn't play that file. try an mp3 or m4a."; });
-    setMeta(s.name); mark(s.id);
+    setMeta(label(s)); mark(s.id);
   }
   function playGroup(g){
     var pool = sounds.filter(function(s){ return s.group === g; });
