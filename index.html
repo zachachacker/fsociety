@@ -57,7 +57,11 @@
                width 1.25s cubic-bezier(.65,0,.2,1), height 1.25s cubic-bezier(.65,0,.2,1),
                opacity 1.25s ease, filter 1.25s ease; }
   #maskFly.full { opacity:1; filter:drop-shadow(0 0 28px rgba(255,255,255,.18)); }
-  @media (prefers-reduced-motion: reduce) { #maskFly { transition:none; } }
+  #flyText { position:fixed; left:0; right:0; z-index:30; text-align:center; color:#fff;
+    font-weight:700; letter-spacing:-.01em; line-height:1.15; text-shadow:0 0 18px rgba(255,255,255,.25);
+    opacity:0; transform:translateY(12px); transition:opacity .9s ease 1.05s, transform .9s ease 1.05s; }
+  #flyText.on { opacity:1; transform:none; }
+  @media (prefers-reduced-motion: reduce) { #maskFly, #flyText { transition:none; } }
 
   /* start screen */
   #start {
@@ -276,13 +280,18 @@
     var c=m.cloneNode(true); c.id="maskFly"; c.className="";
     c.style.left=r.left+"px"; c.style.top=r.top+"px"; c.style.width=r.width+"px"; c.style.height=r.height+"px";
     document.body.appendChild(c); m.style.visibility="hidden";
+    var t=document.createElement("div"); t.id="flyText"; t.textContent="fsociety";
+    document.body.appendChild(t);
     function place(){
-      var w=Math.min(innerWidth*0.86,(innerHeight*0.8)/ratio), h=w*ratio;
-      c.style.left=(innerWidth-w)/2+"px"; c.style.top=(innerHeight-h)/2+"px";
+      // Mask and wordmark are sized to fit together and centred as one group.
+      var w=Math.min(innerWidth*0.82,(innerHeight*0.74)/ratio), h=w*ratio;
+      var fs=w*0.17, gap=w*0.07, top=(innerHeight-(h+gap+fs*1.15))/2;
+      c.style.left=(innerWidth-w)/2+"px"; c.style.top=top+"px";
       c.style.width=w+"px"; c.style.height=h+"px";
+      t.style.top=(top+h+gap)+"px"; t.style.fontSize=fs+"px";
     }
-    void c.offsetWidth; // commit the start position so the change below animates
-    document.body.classList.add("takeover"); c.classList.add("full"); place();
+    void c.offsetWidth; // commit the start state so the changes below animate
+    document.body.classList.add("takeover"); c.classList.add("full"); t.classList.add("on"); place();
     addEventListener("resize", function(){ c.style.transition="none"; place(); });
   }
 
